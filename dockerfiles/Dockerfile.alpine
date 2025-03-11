@@ -1,0 +1,9 @@
+FROM alpine:latest
+
+RUN apk add --no-cache openssh nano && \
+    mkdir -p /var/run/sshd && \
+    ssh-keygen -A && \
+    echo 'root:root' | chpasswd && \
+    echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+
+CMD /usr/sbin/sshd && tail -f /dev/null

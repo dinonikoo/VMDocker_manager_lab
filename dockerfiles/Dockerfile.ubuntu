@@ -1,0 +1,15 @@
+# Используем официальный Ubuntu базовый образ
+FROM ubuntu:20.04
+
+# Устанавливаем необходимые пакеты
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    nano \
+    && mkdir -p /var/run/sshd
+
+# Настройка SSH (разрешаем root доступ и устанавливаем пароль)
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
+    echo 'root:root' | chpasswd
+
+# Убедитесь, что SSH-сервер будет работать
+CMD service ssh start && bash
