@@ -16,7 +16,6 @@ container_passwords = {}  #passwords
 
 
 def find_free_port():
-    """Находит свободный порт для SSH."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
@@ -53,7 +52,6 @@ def create_instance():
 
 @app.route('/list_all', methods=['GET'])
 def list_all_containers():
-    """Возвращает список всех контейнеров (активных и остановленных)."""
     cmd = "docker ps -a --format '{{json .}}'"
     output = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
@@ -84,7 +82,6 @@ def list_all_containers():
 
 @app.route('/start', methods=['POST'])
 def start_container():
-    """Запускает остановленный контейнер."""
     data = request.json
     container_name = data['name']
 
@@ -94,7 +91,6 @@ def start_container():
 
 @app.route('/stop', methods=['POST'])
 def stop_container():
-    """Останавливает запущенный контейнер."""
     data = request.json
     container_name = data['name']
 
@@ -104,7 +100,6 @@ def stop_container():
 
 @app.route('/remove', methods=['POST'])
 def remove_container():
-    """Удаляет контейнер (должен быть остановлен)."""
     data = request.json
     container_name = data['name']
 
