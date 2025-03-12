@@ -1,0 +1,11 @@
+FROM debian:latest
+
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    nano \
+    && mkdir -p /var/run/sshd
+
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
+    echo 'root:root' | chpasswd
+
+CMD service ssh start && bash
