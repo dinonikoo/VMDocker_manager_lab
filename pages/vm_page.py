@@ -3,15 +3,15 @@ import requests
 
 st.title("Управление виртуальными машинами")
 
-# Выбор ОС
+
 os_options = ["Ubuntu", "CentOS", "Fedora"]
 os_choice = st.selectbox("Выберите ОС", os_options)
 
-# Выбор ресурсов
+
 cpu = st.slider("CPU", 1, 4, 2)
 ram = st.slider("RAM (MB)", 512, 4096, 1024)
 
-# Создание ВМ
+
 if st.button("Создать ВМ"):
     response = requests.post("http://localhost:5001/create_vm", json={
         "os": os_choice,
@@ -26,7 +26,6 @@ if st.button("Создать ВМ"):
 
 st.subheader("Список виртуальных машин")
 
-# Получаем список ВМ
 vms = requests.get("http://localhost:5001/list_vms").json()
 
 if vms:
@@ -49,6 +48,5 @@ if vms:
 else:
     st.write("Нет запущенных ВМ.")
 
-# Кнопка возврата
 if st.button("Назад"):
     st.switch_page("one.py")
