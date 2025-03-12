@@ -12,7 +12,7 @@ DOCKERFILES = {
     "Debian": "Dockerfile.debian"
 }
 
-container_passwords = {}  # Храним пароли для контейнеров
+container_passwords = {}  #passwords
 
 
 def find_free_port():
@@ -27,7 +27,7 @@ def create_instance():
     data = request.json
     container_name = f"{data['os'].lower()}_{find_free_port()}"
     ssh_port = find_free_port()
-    password = secrets.token_urlsafe(12)  # Генерация случайного пароля
+    password = secrets.token_urlsafe(12)  
 
     if data['os'] in DOCKERFILES:
         image = f"{data['os'].lower()}_custom"
@@ -35,18 +35,15 @@ def create_instance():
 
         subprocess.run(f"docker build -t {image} -f {dockerfile_path} ./dockerfiles", shell=True, check=True)
 
-        # Запускаем контейнер
         subprocess.run(
             f"docker run -dit --name {container_name} -p {ssh_port}:22 --cpus={data['cpu']} --memory={data['ram']}m {image}",
             shell=True, check=True)
 
-        # Устанавливаем пароль (разные команды для Ubuntu/Debian и Alpine)
         if data["os"] == "Alpine":
             subprocess.run(f"docker exec {container_name} sh -c \"echo 'root:{password}' | chpasswd\"", shell=True, check=True)
         else:
             subprocess.run(f"docker exec {container_name} bash -c \"echo 'root:{password}' | chpasswd\"", shell=True, check=True)
 
-        # Сохраняем порт и пароль
         container_passwords[container_name] = {"password": password, "ssh_port": ssh_port}
 
         return jsonify({"status": "Контейнер успешно запущен"})
@@ -66,7 +63,6 @@ def list_all_containers():
     for container in containers:
         name = container["Names"]
 
-        # Проверяем, есть ли у нас сохраненный порт и пароль
         if name in container_passwords:
             ssh_port = container_passwords[name]["ssh_port"]
             password = container_passwords[name]["password"]
@@ -114,7 +110,6 @@ def remove_container():
 
     subprocess.run(f"docker rm {container_name}", shell=True, check=True)
 
-    # Удаляем пароль контейнера
     if container_name in container_passwords:
         del container_passwords[container_name]
 
