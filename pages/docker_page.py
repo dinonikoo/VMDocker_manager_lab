@@ -3,14 +3,11 @@ import requests
 
 st.title("Управление контейнерами (Docker)")
 
-# Выбор ОС для контейнера
 os_choice = st.selectbox("Выберите ОС", ["Ubuntu", "Alpine", "Debian"])
 
-# Выбор ресурсов
 cpu = st.slider("CPU", 1, 4, 2)
 ram = st.slider("RAM (MB)", 512, 4096, 1024)
 
-# Кнопка запуска контейнера
 if st.button("Запустить контейнер"):
     response = requests.post("http://localhost:5000/create", json={
         "type": "Docker",
@@ -22,7 +19,6 @@ if st.button("Запустить контейнер"):
 
 st.subheader("Список контейнеров")
 
-# Получаем список всех контейнеров
 containers = requests.get("http://localhost:5000/list_all").json()
 
 if containers:
@@ -51,6 +47,5 @@ if containers:
 else:
     st.write("Нет активных контейнеров.")
 
-# Кнопка возврата на главную страницу
 if st.button("Назад"):
     st.switch_page("one.py")
