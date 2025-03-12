@@ -7,7 +7,7 @@ import psutil
 app = Flask(__name__)
 BASE_DIR = "/var/lib/qemu-vms"
 os.makedirs(BASE_DIR, exist_ok=True)
-vm_processes = {}  # Хранение PID запущенных ВМ
+vm_processes = {}  
 
 
 def find_free_port():
