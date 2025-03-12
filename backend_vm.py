@@ -45,7 +45,7 @@ def create_vm(name, os_choice, cpu, ram):
 
     return {
         "message": f"ВМ {name} создана!",
-        "ssh": f"ssh user@localhost -p {ssh_port} (пароль: 12345)",
+        "ssh": f"ssh user@localhost -p {ssh_port} (пароль: user)",
         "port": ssh_port
     }
 
