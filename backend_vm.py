@@ -11,14 +11,12 @@ vm_processes = {}
 
 
 def find_free_port():
-    """Находит свободный порт в системе"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
 
 
 def create_vm(name, os_choice, cpu, ram):
-    """Создаёт виртуальную машину QEMU"""
     cloud_images = {
         "Ubuntu": "/var/lib/libvirt/images/ubuntu-cloud.qcow2",
         "Fedora": "/var/lib/libvirt/images/fedora.qcow2",
@@ -52,7 +50,6 @@ def create_vm(name, os_choice, cpu, ram):
 
 @app.route("/create_vm", methods=["POST"])
 def api_create_vm():
-    """Создание ВМ через API"""
     data = request.json
     name = f"vm-{data['os'].lower()}-{data['cpu']}cpu-{data['ram']}mb"
     result = create_vm(name, data["os"], data["cpu"], data["ram"])
@@ -61,7 +58,6 @@ def api_create_vm():
 
 @app.route("/list_vms", methods=["GET"])
 def list_vms():
-    """Получает список запущенных ВМ"""
     vms = []
     for name, info in vm_processes.items():
         if psutil.pid_exists(info["pid"]):
@@ -74,7 +70,6 @@ def list_vms():
 
 @app.route("/stop_vm", methods=["POST"])
 def stop_vm():
-    """Останавливает ВМ по имени"""
     data = request.json
     name = data["name"]
 
@@ -88,7 +83,6 @@ def stop_vm():
 
 @app.route("/remove_vm", methods=["POST"])
 def remove_vm():
-    """Удаляет ВМ (должна быть остановлена)"""
     data = request.json
     name = data["name"]
 
