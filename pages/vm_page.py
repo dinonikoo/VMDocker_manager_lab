@@ -4,15 +4,16 @@ import requests
 st.title("Управление виртуальными машинами")
 
 # Выбор ОС
-os_options = ["Ubuntu", "CentOS", "Fedora"]
+os_options = ["Ubuntu", "ArchLinux", "Fedora"]
 os_choice = st.selectbox("Выберите ОС", os_options)
 
 # Выбор ресурсов
 cpu = st.slider("CPU", 1, 4, 2)
 ram = st.slider("RAM (MB)", 512, 4096, 1024)
 
-# Новый ползунок для выбора размера диска
+# Ползунок для выбора размера диска
 disk_size = st.slider("Размер диска (GB)", 1, 100, 10)  # Мин: 1GB, Макс: 100GB, По умолчанию: 10GB
+disk_format = "qcow2"  # Выбор формата
 
 # Создание ВМ
 if st.button("Создать ВМ"):
@@ -64,13 +65,18 @@ if vms:
             st.write(f"**Имя:** {vm['name']} | **Порт:** {vm['port']} | **Статус:** {vm['status']}")
             st.code(f"ssh user@localhost -p {vm['port']}", language="bash")
 
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 if vm["status"] == "running":
                     if st.button(f"Остановить {vm['name']}"):
                         requests.post("http://localhost:5001/stop_vm", json={"name": vm["name"]})
                         st.rerun()
             with col2:
+                if vm["status"] == "stopped":
+                    if st.button(f"Запустить {vm['name']}"):  # Новая кнопка для старта ВМ
+                        requests.post("http://localhost:5001/start_vm", json={"name": vm["name"]})
+                        st.rerun()
+            with col3:
                 if vm["status"] == "stopped":
                     if st.button(f"Удалить {vm['name']}"):
                         requests.post("http://localhost:5001/remove_vm", json={"name": vm["name"]})
