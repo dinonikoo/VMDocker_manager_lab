@@ -5,18 +5,32 @@ import socket
 import psutil
 import json 
 import time
+import threading
 
 app = Flask(__name__)
 BASE_DIR = "/var/lib/qemu-vms"
 os.makedirs(BASE_DIR, exist_ok=True)
 vm_processes = {}  # Хранение PID запущенных ВМ
-
+vm_lifetime = {}  # Время жизни ВМ (в секундах)
+vm_end_time = {}  # Время, когда ВМ должна завершить работу
+active_timers = {}  # Активные таймеры
 
 def find_free_port():
     """Находит свободный порт в системе"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
+    
+def stop_vm_when_time_expires(vm_name):
+    """Останавливает ВМ, когда истекает время работы."""
+    while vm_name in vm_end_time:
+        remaining_time = max(0, vm_end_time[vm_name] - time.time())
+        if remaining_time <= 0:
+            subprocess.run(["pkill", "-f", vm_name], check=False)
+            print(f"ВМ {vm_name} автоматически остановлена.")
+            del vm_end_time[vm_name]
+            break
+        time.sleep(1)
 
 def save_vm_config(name, config):
     config_path = os.path.join(BASE_DIR, f"{name}.json")
@@ -71,7 +85,7 @@ runcmd:
     return iso_path
 
 
-def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
+def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2", lifetime=600):
     cloud_images = {
         "Ubuntu": "/var/lib/libvirt/images/ubuntu-cloud.qcow2",
         "ArchLinux": "/var/lib/libvirt/images/Arch-Linux-x86_64-cloudimg.qcow2",
@@ -118,10 +132,18 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
     process = subprocess.Popen(qemu_cmd)
     vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": qmp_socket}
 
+    vm_lifetime[name] = lifetime
+    vm_end_time[name] = time.time() + lifetime
+
+    timer_thread = threading.Thread(target=stop_vm_when_time_expires, args=(name,), daemon=True)
+    timer_thread.start()
+    active_timers[name] = timer_thread
+
     return {
         "message": f"ВМ {name} создана!",
         "ssh": f"ssh user@localhost -p {ssh_port} (пароль: 12345)",
-        "port": ssh_port
+        "port": ssh_port,
+        "lifetime": lifetime
     }
 
 
@@ -130,6 +152,7 @@ def api_create_vm():
     try:
         data = request.json
         name = f"vm-{data['os'].lower()}-{data['cpu']}cpu-{data['ram']}mb"
+        lifetime = data.get("lifetime", 600)  # Время жизни ВМ в секундах (по умолчанию 10 минут)
         result = create_vm(name, data["os"], data["cpu"], data["ram"], data.get("disk_size", 10), data.get("disk_format", "qcow2"))
         return jsonify(result)
     except Exception as e:
@@ -138,30 +161,17 @@ def api_create_vm():
 
 @app.route("/list_vms", methods=["GET"])
 def list_vms():
-    """Возвращает список всех ВМ (запущенных и остановленных)"""
-    vms = {}
-
-    # Проверяем файлы виртуальных дисков
-    for filename in os.listdir(BASE_DIR):
-        if filename.endswith(".qcow2") or filename.endswith(".raw"):
-            name = filename.split(".")[0]
-            vms[name] = {
-                "name": name,  # Добавляем имя ВМ
-                "status": "stopped",
-                "disk": os.path.join(BASE_DIR, filename),
-                "port": None  # Порт не нужен для остановленных ВМ
-            }
-
-    # Проверяем запущенные процессы
-    for proc in psutil.process_iter(attrs=["pid", "name", "cmdline"]):
-        if "qemu-system" in " ".join(proc.info["cmdline"] or []):
-            for name in vms:
-                if name in " ".join(proc.info["cmdline"]):
-                    vms[name]["status"] = "running"
-                    vms[name]["pid"] = proc.info["pid"]
-                    vms[name]["port"] = vm_processes.get(name, {}).get("port", "Unknown")  # Добавляем порт, если известен
-
-    return jsonify(list(vms.values()))
+    """Возвращает список всех ВМ с оставшимся временем работы."""
+    vms = []
+    for name, process in vm_processes.items():
+        remaining_time = max(0, int(vm_end_time.get(name, 0) - time.time())) if name in vm_end_time else None
+        vms.append({
+            "name": name,
+            "status": "running" if name in vm_end_time else "stopped",
+            "port": process["port"],
+            "remaining_time": remaining_time
+        })
+    return jsonify(vms)
 
 
 
