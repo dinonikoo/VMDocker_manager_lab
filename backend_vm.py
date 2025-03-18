@@ -18,6 +18,17 @@ def find_free_port():
         s.bind(('', 0))
         return s.getsockname()[1]
 
+def save_vm_config(name, config):
+    config_path = os.path.join(BASE_DIR, f"{name}.json")
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+
+def load_vm_config(name):
+    config_path = os.path.join(BASE_DIR, f"{name}.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return json.load(f)
+    return None
 
 def create_cloud_init_iso(vm_name):
     """Создаёт ISO-образ cloud-init"""
@@ -72,13 +83,25 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
     if disk_format == "qcow2":
         subprocess.run(["qemu-img", "create", "-f", "qcow2", "-b", base_image, disk_path, "-F", "qcow2"])
         subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
-    elif disk_format == "raw":
-        subprocess.run(["qemu-img", "convert", "-f", "qcow2", "-O", "raw", base_image, disk_path])
-        subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
+    # elif disk_format == "raw":
+    #     subprocess.run(["qemu-img", "convert", "-f", "qcow2", "-O", "raw", base_image, disk_path])
+    #     subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
 
     cloud_init_iso = create_cloud_init_iso(name)
     ssh_port = find_free_port()
     qmp_socket = f"/tmp/{name}-qmp.sock"
+
+    config = {
+        "name": name,
+        "os": os_choice,
+        "cpu": cpu,
+        "ram": ram,
+        "disk_size": disk_size,
+        "disk_format": disk_format,
+        "port": ssh_port,
+        "qmp_socket": qmp_socket
+    }
+    save_vm_config(name, config)
 
     qemu_cmd = [
         "qemu-system-x86_64",
@@ -104,17 +127,11 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
 
 @app.route("/create_vm", methods=["POST"])
 def api_create_vm():
-    """Создание ВМ через API с указанием дискового пространства"""
     try:
         data = request.json
         name = f"vm-{data['os'].lower()}-{data['cpu']}cpu-{data['ram']}mb"
-
-        disk_size = data.get("disk_size", 10)  # Если нет в запросе, ставим 10GB
-        disk_format = data.get("disk_format", "qcow2")  # По умолчанию qcow2
-
-        result = create_vm(name, data["os"], data["cpu"], data["ram"], disk_size, disk_format)
+        result = create_vm(name, data["os"], data["cpu"], data["ram"], data.get("disk_size", 10), data.get("disk_format", "qcow2"))
         return jsonify(result)
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -201,6 +218,41 @@ def stop_vm():
     else:
         return jsonify({"error": "ВМ не найдена"}), 404
 
+
+@app.route("/start_vm", methods=["POST"])
+def start_vm():
+    try:
+        data = request.json
+        name = data["name"]
+        config = load_vm_config(name)
+        
+        if not config:
+            return jsonify({"error": "Конфигурация ВМ не найдена"}), 404
+        
+        ssh_port = find_free_port()
+        config["port"] = ssh_port
+        save_vm_config(name, config)
+        
+        qemu_cmd = [
+            "qemu-system-x86_64",
+            "-cpu", "qemu64",
+            "-m", str(config["ram"]),
+            "-smp", str(config["cpu"]),
+            "-drive", f"file={BASE_DIR}/{name}.{config['disk_format']},format={config['disk_format']}",
+            "-net", f"user,hostfwd=tcp::{ssh_port}-:22",
+            "-net", "nic",
+            "-qmp", f"unix:{config['qmp_socket']},server,nowait"
+        ]
+        process = subprocess.Popen(qemu_cmd)
+        vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": config["qmp_socket"]}
+        
+        return jsonify({
+            "message": f"ВМ {name} запущена!",
+            "ssh": f"ssh user@localhost -p {ssh_port}",
+            "port": ssh_port
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/remove_vm", methods=["POST"])
