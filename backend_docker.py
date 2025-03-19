@@ -21,14 +21,12 @@ active_timers = {}
 
 
 def find_free_port():
-    """Находит свободный порт."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
 
 
 def stop_container_when_time_expires(container_name):
-    """Останавливает контейнер, когда истекает его время работы."""
     while container_name in container_end_time:
         remaining_time = max(0, container_end_time[container_name] - time.time())
 
@@ -43,7 +41,6 @@ def stop_container_when_time_expires(container_name):
 
 @app.route('/create', methods=['POST'])
 def create_instance():
-    """Создает новый контейнер."""
     data = request.json
     container_name = f"{data['os'].lower()}_{find_free_port()}"
     ssh_port = find_free_port()
@@ -79,7 +76,6 @@ def create_instance():
 
 @app.route('/list_all', methods=['GET'])
 def list_all_containers():
-    """Выводит список всех контейнеров с обновляемым временем работы."""
     cmd = "docker ps -a --format '{{json .}}'"
     output = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
@@ -112,7 +108,6 @@ def list_all_containers():
 
 @app.route('/start', methods=['POST'])
 def start_container():
-    """Запускает контейнер заново и сбрасывает таймер."""
     data = request.json
     container_name = data['name']
 
@@ -130,7 +125,6 @@ def start_container():
 
 @app.route('/stop', methods=['POST'])
 def stop_container():
-    """Останавливает контейнер."""
     data = request.json
     container_name = data['name']
 
@@ -144,7 +138,6 @@ def stop_container():
 
 @app.route('/remove', methods=['POST'])
 def remove_container():
-    """Удаляет контейнер."""
     data = request.json
     container_name = data['name']
     subprocess.run(f"docker rm {container_name}", shell=True, check=True)
