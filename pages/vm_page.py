@@ -12,6 +12,8 @@ ram = st.slider("RAM (MB)", 512, 4096, 1024)
 disk_size = st.slider("Размер диска (GB)", 1, 100, 10)  
 disk_format = "qcow2" 
 
+rental_duration = st.slider("Длительность аренды (минуты)", 1, 60, 2)  # Новый ползунок
+
 if st.button("Создать ВМ"):
     try:
         response = requests.post("http://localhost:5001/create_vm", json={
@@ -19,7 +21,8 @@ if st.button("Создать ВМ"):
             "cpu": cpu,
             "ram": ram,
             "disk_size": disk_size,  
-            "disk_format": disk_format  
+            "disk_format": disk_format,
+            "lifetime": rental_duration * 60  # Передаем длительность аренды
         })
 
         if response.status_code == 200:
@@ -67,7 +70,7 @@ if vms:
                         st.rerun()
             with col2:
                 if vm["status"] == "stopped":
-                    if st.button(f"Запустить {vm['name']}"):  # Новая кнопка для старта ВМ
+                    if st.button(f"Запустить {vm['name']}"):
                         requests.post("http://localhost:5001/start_vm", json={"name": vm["name"]})
                         st.rerun()
             with col3:
@@ -78,5 +81,3 @@ if vms:
 else:
     st.write("Нет запущенных ВМ.")
 
-if st.button("Назад"):
-    st.switch_page("one.py")
