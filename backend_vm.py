@@ -31,16 +31,26 @@ def find_free_port():
         s.bind(('', 0))
         return s.getsockname()[1]
     
+def stop_vm_by_name(name):
+    """Останавливает ВМ по имени."""
+    if name in vm_processes:
+        qmp_socket = vm_processes[name]["qmp_socket"]
+        if send_qmp_command(qmp_socket, "system_powerdown"):
+            return True  # Успешная остановка
+    return False  # Ошибка
+
 def stop_vm_when_time_expires(vm_name):
-     """Останавливает ВМ, когда истекает время работы."""
-     while vm_name in vm_end_time:
-         remaining_time = max(0, vm_end_time[vm_name] - time.time())
-         if remaining_time <= 0:
-             subprocess.run(["pkill", "-f", vm_name], check=False)
-             print(f"ВМ {vm_name} автоматически остановлена.")
-             del vm_end_time[vm_name]
-             break
-         time.sleep(1)
+    """Останавливает ВМ, когда истекает время работы."""
+    while vm_name in vm_end_time:
+        remaining_time = max(0, vm_end_time[vm_name] - time.time())
+        if remaining_time <= 0:
+            if stop_vm_by_name(vm_name):
+                print(f"ВМ {vm_name} автоматически остановлена.")
+            else:
+                print(f"Ошибка при остановке ВМ {vm_name}.")
+            del vm_end_time[vm_name]
+            break
+        time.sleep(1)
 
 def save_vm_config(name, config):
     config_path = os.path.join(BASE_DIR, f"{name}.json")
