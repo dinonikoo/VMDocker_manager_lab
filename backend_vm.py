@@ -10,27 +10,12 @@ import threading
 app = Flask(__name__)
 BASE_DIR = "/var/lib/qemu-vms"
 os.makedirs(BASE_DIR, exist_ok=True)
-vm_processes = {}  # Хранение PID запущенных ВМ
-vm_lifetime = {}  # Время жизни ВМ (в секундах)
-vm_end_time = {}  # Время, когда ВМ должна завершить работу
-active_timers = {}  # Активные таймеры
+vm_processes = {}  
 
 def find_free_port():
-    """Находит свободный порт в системе"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
-    
-def stop_vm_when_time_expires(vm_name):
-    """Останавливает ВМ, когда истекает время работы."""
-    while vm_name in vm_end_time:
-        remaining_time = max(0, vm_end_time[vm_name] - time.time())
-        if remaining_time <= 0:
-            subprocess.run(["pkill", "-f", vm_name], check=False)
-            print(f"ВМ {vm_name} автоматически остановлена.")
-            del vm_end_time[vm_name]
-            break
-        time.sleep(1)
 
 def save_vm_config(name, config):
     config_path = os.path.join(BASE_DIR, f"{name}.json")
@@ -45,7 +30,6 @@ def load_vm_config(name):
     return None
 
 def create_cloud_init_iso(vm_name):
-    """Создаёт ISO-образ cloud-init"""
     cloud_init_dir = f"/tmp/cloud-init-{vm_name}"
     os.makedirs(cloud_init_dir, exist_ok=True)
 
@@ -85,7 +69,7 @@ runcmd:
     return iso_path
 
 
-def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2", lifetime=600):
+def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
     cloud_images = {
         "Ubuntu": "/var/lib/libvirt/images/ubuntu-cloud.qcow2",
         "ArchLinux": "/var/lib/libvirt/images/Arch-Linux-x86_64-cloudimg.qcow2",
@@ -97,9 +81,6 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2", lifetim
     if disk_format == "qcow2":
         subprocess.run(["qemu-img", "create", "-f", "qcow2", "-b", base_image, disk_path, "-F", "qcow2"])
         subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
-    # elif disk_format == "raw":
-    #     subprocess.run(["qemu-img", "convert", "-f", "qcow2", "-O", "raw", base_image, disk_path])
-    #     subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
 
     cloud_init_iso = create_cloud_init_iso(name)
     ssh_port = find_free_port()
@@ -132,18 +113,10 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2", lifetim
     process = subprocess.Popen(qemu_cmd)
     vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": qmp_socket}
 
-    vm_lifetime[name] = lifetime
-    vm_end_time[name] = time.time() + lifetime
-
-    timer_thread = threading.Thread(target=stop_vm_when_time_expires, args=(name,), daemon=True)
-    timer_thread.start()
-    active_timers[name] = timer_thread
-
     return {
         "message": f"ВМ {name} создана!",
         "ssh": f"ssh user@localhost -p {ssh_port} (пароль: 12345)",
-        "port": ssh_port,
-        "lifetime": lifetime
+        "port": ssh_port
     }
 
 
@@ -152,7 +125,6 @@ def api_create_vm():
     try:
         data = request.json
         name = f"vm-{data['os'].lower()}-{data['cpu']}cpu-{data['ram']}mb"
-        lifetime = data.get("lifetime", 600)  # Время жизни ВМ в секундах (по умолчанию 10 минут)
         result = create_vm(name, data["os"], data["cpu"], data["ram"], data.get("disk_size", 10), data.get("disk_format", "qcow2"))
         return jsonify(result)
     except Exception as e:
@@ -161,23 +133,32 @@ def api_create_vm():
 
 @app.route("/list_vms", methods=["GET"])
 def list_vms():
-    """Возвращает список всех ВМ с оставшимся временем работы."""
-    vms = []
-    for name, process in vm_processes.items():
-        remaining_time = max(0, int(vm_end_time.get(name, 0) - time.time())) if name in vm_end_time else None
-        vms.append({
-            "name": name,
-            "status": "running" if name in vm_end_time else "stopped",
-            "port": process["port"],
-            "remaining_time": remaining_time
-        })
-    return jsonify(vms)
+    vms = {}
+ 
+    for filename in os.listdir(BASE_DIR):
+        if filename.endswith(".qcow2") or filename.endswith(".raw"):
+            name = filename.split(".")[0]
+            vms[name] = {
+                "name": name,  
+                "status": "stopped",
+                "disk": os.path.join(BASE_DIR, filename),
+                "port": None  
+            }
+ 
+    for proc in psutil.process_iter(attrs=["pid", "name", "cmdline"]):
+        if "qemu-system" in " ".join(proc.info["cmdline"] or []):
+            for name in vms:
+                if name in " ".join(proc.info["cmdline"]):
+                    vms[name]["status"] = "running"
+                    vms[name]["pid"] = proc.info["pid"]
+                    vms[name]["port"] = vm_processes.get(name, {}).get("port", "Unknown") 
+ 
+    return jsonify(list(vms.values()))
 
 
 
 
 def send_qmp_command(socket_path, command):
-    """Отправляет команду в QMP сокет"""
     try:
         if not os.path.exists(socket_path):
             print(f"[Ошибка] QMP сокет {socket_path} не найден!")
@@ -186,11 +167,9 @@ def send_qmp_command(socket_path, command):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
 
-            # Получаем приветственное сообщение от QEMU
             welcome_message = s.recv(1024).decode()
             print(f"[QMP Приветствие] {welcome_message}")
 
-            # Отправляем команду активации QMP
             qmp_capabilities = json.dumps({"execute": "qmp_capabilities"})
             print(f"[Отправка QMP Capabilities] {qmp_capabilities}")
             s.sendall(qmp_capabilities.encode() + b"\n")
@@ -199,7 +178,6 @@ def send_qmp_command(socket_path, command):
             response = s.recv(1024).decode()
             print(f"[Ответ QMP Capabilities] {response}")
 
-            # Отправляем реальную команду
             cmd = json.dumps({"execute": command})
             print(f"[Отправка команды] {cmd}")
             s.sendall(cmd.encode() + b"\n")
@@ -208,7 +186,7 @@ def send_qmp_command(socket_path, command):
             response = s.recv(1024).decode()
             print(f"[Ответ QMP] {response}")
 
-            return "return" in response  # Проверяем, что QEMU отработал команду
+            return "return" in response 
     except Exception as e:
         print(f"[Ошибка QMP] {e}")
         return False
@@ -267,7 +245,6 @@ def start_vm():
 
 @app.route("/remove_vm", methods=["POST"])
 def remove_vm():
-    """Удаляет ВМ (должна быть остановлена)"""
     data = request.json
     name = data["name"]
 
