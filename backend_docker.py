@@ -14,10 +14,10 @@ DOCKERFILES = {
     "Debian": "Dockerfile.debian"
 }
 
-container_passwords = {}  # Хранение паролей контейнеров
-container_lifetime = {}  # Исходное время работы контейнера (в секундах)
-container_end_time = {}  # Время, когда контейнер должен завершить работу
-active_timers = {}  # Активные таймеры для контейнеров
+container_passwords = {}  
+container_lifetime = {} 
+container_end_time = {} 
+active_timers = {} 
 
 
 def find_free_port():
@@ -36,9 +36,9 @@ def stop_container_when_time_expires(container_name):
             subprocess.run(f"docker stop {container_name}", shell=True, check=True)
             print(f"Контейнер {container_name} автоматически остановлен.")
             del container_end_time[container_name]
-            break  # Завершаем поток
+            break  
 
-        time.sleep(1)  # Проверяем каждую секунду
+        time.sleep(1) 
 
 
 @app.route('/create', methods=['POST'])
@@ -48,7 +48,7 @@ def create_instance():
     container_name = f"{data['os'].lower()}_{find_free_port()}"
     ssh_port = find_free_port()
     password = secrets.token_urlsafe(12)
-    lifetime = data.get('lifetime', 10) * 60  # Время в секундах (по умолчанию 10 минут)
+    lifetime = data.get('lifetime', 10) * 60  
 
     if data['os'] in DOCKERFILES:
         image = f"{data['os'].lower()}_custom"
@@ -65,13 +65,12 @@ def create_instance():
             subprocess.run(f"docker exec {container_name} bash -c \"echo 'root:{password}' | chpasswd\"", shell=True, check=True)
 
         container_passwords[container_name] = {"password": password, "ssh_port": ssh_port}
-        container_lifetime[container_name] = lifetime  # Запоминаем исходное время жизни контейнера
-        container_end_time[container_name] = time.time() + lifetime  # Устанавливаем время окончания работы
+        container_lifetime[container_name] = lifetime  
+        container_end_time[container_name] = time.time() + lifetime  
 
-        # Запускаем таймер в отдельном потоке
         timer_thread = threading.Thread(target=stop_container_when_time_expires, args=(container_name,), daemon=True)
         timer_thread.start()
-        active_timers[container_name] = timer_thread  # Сохраняем активный таймер
+        active_timers[container_name] = timer_thread  
 
         return jsonify({"status": "Контейнер успешно запущен", "name": container_name})
     else:
@@ -93,7 +92,6 @@ def list_all_containers():
         password = container_passwords.get(name, {}).get("password", "Не найдено")
         status = container["State"]
 
-        # Показываем оставшееся время **только если контейнер работает**
         remaining_time = None
         if status == "running" and name in container_end_time:
             remaining_time = max(0, int(container_end_time[name] - time.time()))
@@ -105,7 +103,7 @@ def list_all_containers():
             "ports": container["Ports"],
             "ssh_command": f"ssh root@localhost -p {ssh_port}" if ssh_port != "Не найдено" else "SSH не настроен",
             "password": password,
-            "remaining_time": remaining_time  # Будет `None`, если контейнер не работает
+            "remaining_time": remaining_time  
         })
 
     return jsonify(result)
@@ -120,14 +118,12 @@ def start_container():
 
     subprocess.run(f"docker start {container_name}", shell=True, check=True)
 
-    # Устанавливаем новое время завершения
     if container_name in container_lifetime:
         container_end_time[container_name] = time.time() + container_lifetime[container_name]
 
-        # Запускаем новый таймер
         timer_thread = threading.Thread(target=stop_container_when_time_expires, args=(container_name,), daemon=True)
         timer_thread.start()
-        active_timers[container_name] = timer_thread  # Сохраняем новый таймер
+        active_timers[container_name] = timer_thread 
 
     return jsonify({"status": "Контейнер запущен", "container": container_name})
 
@@ -140,7 +136,6 @@ def stop_container():
 
     subprocess.run(f"docker stop {container_name}", shell=True, check=True)
 
-    # Удаляем таймер контейнера
     if container_name in container_end_time:
         del container_end_time[container_name]
 
