@@ -31,58 +31,16 @@ def find_free_port():
         s.bind(('', 0))
         return s.getsockname()[1]
     
-def send_qmp_command(socket_path, command):
-    try:
-        if not os.path.exists(socket_path):
-            print(f"[Ошибка] QMP сокет {socket_path} не найден!")
-            return False
-
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.connect(socket_path)
-
-            welcome_message = s.recv(1024).decode()
-            print(f"[QMP Приветствие] {welcome_message}")
-
-            qmp_capabilities = json.dumps({"execute": "qmp_capabilities"})
-            print(f"[Отправка QMP Capabilities] {qmp_capabilities}")
-            s.sendall(qmp_capabilities.encode() + b"\n")
-            time.sleep(1)
-
-            response = s.recv(1024).decode()
-            print(f"[Ответ QMP Capabilities] {response}")
-
-            cmd = json.dumps({"execute": command})
-            print(f"[Отправка команды] {cmd}")
-            s.sendall(cmd.encode() + b"\n")
-            time.sleep(1)
-
-            response = s.recv(1024).decode()
-            print(f"[Ответ QMP] {response}")
-
-            return "return" in response 
-    except Exception as e:
-        print(f"[Ошибка QMP] {e}")
-        return False
-
-def stop_vm_directly(vm_name):
-    if vm_name in vm_processes:
-        qmp_socket = vm_processes[vm_name]["qmp_socket"]
-        if send_qmp_command(qmp_socket, "system_powerdown"):
-            print(f"ВМ {vm_name} остановлена.")
-            return True
-    return False
-    
 def stop_vm_when_time_expires(vm_name):
-    while vm_name in vm_end_time:
-        remaining_time = max(0, vm_end_time[vm_name] - time.time())
-        if remaining_time <= 0:
-            if stop_vm_directly(vm_name):  
-                print(f"ВМ {vm_name} автоматически остановлена.")
-            else:
-                print(f"Ошибка: не удалось остановить ВМ {vm_name}.")
-            del vm_end_time[vm_name]
-            break
-        time.sleep(1)
+     """Останавливает ВМ, когда истекает время работы."""
+     while vm_name in vm_end_time:
+         remaining_time = max(0, vm_end_time[vm_name] - time.time())
+         if remaining_time <= 0:
+             subprocess.run(["pkill", "-f", vm_name], check=False)
+             print(f"ВМ {vm_name} автоматически остановлена.")
+             del vm_end_time[vm_name]
+             break
+         time.sleep(1)
 
 def save_vm_config(name, config):
     config_path = os.path.join(BASE_DIR, f"{name}.json")
@@ -249,6 +207,39 @@ def list_vms():
                 "remaining_time": max(0, int(vm_end_time.get(name, 0) - time.time())) if name in vm_end_time else None
             }
     return jsonify(list(vms.values()))
+
+def send_qmp_command(socket_path, command):
+    try:
+        if not os.path.exists(socket_path):
+            print(f"[Ошибка] QMP сокет {socket_path} не найден!")
+            return False
+
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(socket_path)
+
+            welcome_message = s.recv(1024).decode()
+            print(f"[QMP Приветствие] {welcome_message}")
+
+            qmp_capabilities = json.dumps({"execute": "qmp_capabilities"})
+            print(f"[Отправка QMP Capabilities] {qmp_capabilities}")
+            s.sendall(qmp_capabilities.encode() + b"\n")
+            time.sleep(1)
+
+            response = s.recv(1024).decode()
+            print(f"[Ответ QMP Capabilities] {response}")
+
+            cmd = json.dumps({"execute": command})
+            print(f"[Отправка команды] {cmd}")
+            s.sendall(cmd.encode() + b"\n")
+            time.sleep(1)
+
+            response = s.recv(1024).decode()
+            print(f"[Ответ QMP] {response}")
+
+            return "return" in response 
+    except Exception as e:
+        print(f"[Ошибка QMP] {e}")
+        return False
 
 
 @app.route("/stop_vm", methods=["POST"])
