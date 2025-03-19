@@ -12,6 +12,17 @@ BASE_DIR = "/var/lib/qemu-vms"
 os.makedirs(BASE_DIR, exist_ok=True)
 vm_processes = {}  
 
+def wait_for_ssh(port, timeout=60, initial_delay=40):
+    time.sleep(initial_delay) 
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            if s.connect_ex(("localhost", port)) == 0:
+                return True
+        time.sleep(1) 
+    return False
+
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
@@ -78,9 +89,8 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
     base_image = cloud_images.get(os_choice, cloud_images["Ubuntu"])
     disk_path = f"{BASE_DIR}/{name}.{disk_format}"
 
-    if disk_format == "qcow2":
-        subprocess.run(["qemu-img", "create", "-f", "qcow2", "-b", base_image, disk_path, "-F", "qcow2"])
-        subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
+    subprocess.run(["qemu-img", "create", "-f", "qcow2", "-b", base_image, disk_path, "-F", "qcow2"])
+    subprocess.run(["qemu-img", "resize", disk_path, f"{disk_size}G"])
 
     cloud_init_iso = create_cloud_init_iso(name)
     ssh_port = find_free_port()
@@ -113,11 +123,17 @@ def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2"):
     process = subprocess.Popen(qemu_cmd)
     vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": qmp_socket}
 
-    return {
-        "message": f"ВМ {name} создана!",
-        "ssh": f"ssh user@localhost -p {ssh_port} (пароль: 12345)",
-        "port": ssh_port
-    }
+    if wait_for_ssh(ssh_port):
+        return {
+            "message": f"ВМ {name} создана!",
+            "ssh": f"ssh user@localhost -p {ssh_port} (пароль: 12345)",
+            "port": ssh_port
+        }
+    else:
+        return {
+            "message": f"ВМ {name} создана, но SSH не доступен через 60 секунд",
+            "port": ssh_port
+        }
 
 
 @app.route("/create_vm", methods=["POST"])
@@ -154,9 +170,6 @@ def list_vms():
                     vms[name]["port"] = vm_processes.get(name, {}).get("port", "Unknown") 
  
     return jsonify(list(vms.values()))
-
-
-
 
 def send_qmp_command(socket_path, command):
     try:
