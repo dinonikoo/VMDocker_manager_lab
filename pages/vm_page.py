@@ -3,27 +3,23 @@ import requests
 
 st.title("Управление виртуальными машинами")
 
-# Выбор ОС
 os_options = ["Ubuntu", "ArchLinux", "Fedora"]
 os_choice = st.selectbox("Выберите ОС", os_options)
 
-# Выбор ресурсов
 cpu = st.slider("CPU", 1, 4, 2)
 ram = st.slider("RAM (MB)", 512, 4096, 1024)
 
-# Ползунок для выбора размера диска
-disk_size = st.slider("Размер диска (GB)", 1, 100, 10)  # Мин: 1GB, Макс: 100GB, По умолчанию: 10GB
-disk_format = "qcow2"  # Выбор формата
+disk_size = st.slider("Размер диска (GB)", 1, 100, 10)  
+disk_format = "qcow2" 
 
-# Создание ВМ
 if st.button("Создать ВМ"):
     try:
         response = requests.post("http://localhost:5001/create_vm", json={
             "os": os_choice,
             "cpu": cpu,
             "ram": ram,
-            "disk_size": disk_size,  # Отправляем выбранный размер диска
-            "disk_format": disk_format  # Отправляем формат
+            "disk_size": disk_size,  
+            "disk_format": disk_format  
         })
 
         if response.status_code == 200:
@@ -40,7 +36,6 @@ if st.button("Создать ВМ"):
 
 st.subheader("Список виртуальных машин")
 
-# Получаем список ВМ с обработкой ошибок
 try:
     response = requests.get("http://localhost:5001/list_vms")
     
@@ -58,7 +53,6 @@ except requests.exceptions.ConnectionError:
     st.error("Ошибка соединения! Сервер Flask не запущен.")
     vms = []
 
-# Отображение списка ВМ
 if vms:
     for vm in vms:
         with st.container():
@@ -84,6 +78,5 @@ if vms:
 else:
     st.write("Нет запущенных ВМ.")
 
-# Кнопка возврата
 if st.button("Назад"):
     st.switch_page("one.py")
