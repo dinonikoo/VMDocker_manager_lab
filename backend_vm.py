@@ -11,9 +11,9 @@ app = Flask(__name__)
 BASE_DIR = "/var/lib/qemu-vms"
 os.makedirs(BASE_DIR, exist_ok=True)
 vm_processes = {}  
-vm_lifetime = {}  # Время жизни ВМ (в секундах)
-vm_end_time = {}  # Время, когда ВМ должна завершить работу
-active_timers = {}  # Активные таймеры
+vm_lifetime = {}  
+vm_end_time = {}  
+active_timers = {}  
 
 def wait_for_ssh(port, timeout=60, initial_delay=40):
     time.sleep(initial_delay) 
@@ -32,12 +32,11 @@ def find_free_port():
         return s.getsockname()[1]
     
 def stop_vm_by_name(name):
-    """Останавливает ВМ по имени."""
     if name in vm_processes:
         qmp_socket = vm_processes[name]["qmp_socket"]
         if send_qmp_command(qmp_socket, "system_powerdown"):
-            return True  # Успешная остановка
-    return False  # Ошибка
+            return True  
+    return False 
 
 def stop_vm_when_time_expires(vm_name):
     while vm_name in vm_end_time:
@@ -294,13 +293,11 @@ def start_vm():
         process = subprocess.Popen(qemu_cmd)
         vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": config["qmp_socket"]}
         
-        # Устанавливаем время окончания работы ВМ на новый период
-        vm_lifetime[name] = vm_lifetime.get(name, 180)  # Берем сохраненное время жизни или 180 сек по умолчанию
+        vm_lifetime[name] = vm_lifetime.get(name, 180) 
         vm_end_time[name] = time.time() + vm_lifetime[name]
 
-        # Перезапускаем таймер для автоматического выключения
         if name in active_timers and active_timers[name].is_alive():
-            active_timers[name].join()  # Завершаем старый поток перед запуском нового
+            active_timers[name].join()  
 
         timer_thread = threading.Thread(target=stop_vm_when_time_expires, args=(name,), daemon=True)
         timer_thread.start()
