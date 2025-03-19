@@ -40,9 +40,9 @@ def stop_vm_by_name(name):
     return False  # Ошибка
 
 def stop_vm_when_time_expires(vm_name):
-    """Останавливает ВМ, когда истекает время работы."""
     while vm_name in vm_end_time:
         remaining_time = max(0, vm_end_time[vm_name] - time.time())
+        print(f"Оставшееся время для {vm_name}: {remaining_time} секунд")
         if remaining_time <= 0:
             if stop_vm_by_name(vm_name):
                 print(f"ВМ {vm_name} автоматически остановлена.")
@@ -104,7 +104,7 @@ runcmd:
     return iso_path
 
 
-def create_vm(name, os_choice, cpu, ram, disk_size, disk_format="qcow2", lifetime=180):
+def create_vm(name, os_choice, cpu, ram, disk_size, lifetime, disk_format="qcow2"):
     cloud_images = {
         "Ubuntu": "/var/lib/libvirt/images/ubuntu-cloud.qcow2",
         "ArchLinux": "/var/lib/libvirt/images/Arch-Linux-x86_64-cloudimg.qcow2",
@@ -173,7 +173,7 @@ def api_create_vm():
         data = request.json
         name = f"vm-{data['os'].lower()}-{data['cpu']}cpu-{data['ram']}mb"
         lifetime = data.get("lifetime", 180) 
-        result = create_vm(name, data["os"], data["cpu"], data["ram"], data.get("disk_size", 10), data.get("disk_format", "qcow2"))
+        result = create_vm(name, data["os"], data["cpu"], data["ram"], data.get("disk_size", 10), lifetime, data.get("disk_format", "qcow2"))
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -293,15 +293,24 @@ def start_vm():
         ]
         process = subprocess.Popen(qemu_cmd)
         vm_processes[name] = {"pid": process.pid, "port": ssh_port, "qmp_socket": config["qmp_socket"]}
-        vm_end_time[name] = time.time() + vm_lifetime.get(name, 180)# ДОБАВЛЕНА
-        if name not in active_timers or not active_timers[name].is_alive(): # ДОБАВЛЕНА
-            timer_thread = threading.Thread(target=stop_vm_when_time_expires, args=(name,), daemon=True) # ДОБАВЛЕНА
-            timer_thread.start() # ДОБАВЛЕНА
-            active_timers[name] = timer_thread # ДОБАВЛЕНА
+        
+        # Устанавливаем время окончания работы ВМ на новый период
+        vm_lifetime[name] = vm_lifetime.get(name, 180)  # Берем сохраненное время жизни или 180 сек по умолчанию
+        vm_end_time[name] = time.time() + vm_lifetime[name]
+
+        # Перезапускаем таймер для автоматического выключения
+        if name in active_timers and active_timers[name].is_alive():
+            active_timers[name].join()  # Завершаем старый поток перед запуском нового
+
+        timer_thread = threading.Thread(target=stop_vm_when_time_expires, args=(name,), daemon=True)
+        timer_thread.start()
+        active_timers[name] = timer_thread
+
         return jsonify({
             "message": f"ВМ {name} запущена!",
             "ssh": f"ssh user@localhost -p {ssh_port}",
-            "port": ssh_port
+            "port": ssh_port,
+            "lifetime": vm_lifetime[name]
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
